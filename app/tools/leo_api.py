@@ -11,7 +11,7 @@ GRAPHQL_URL = "https://api.leonardo.ai/v1/graphql"
 SCHEMA_VERSION = "1.171.0"
 ORIGIN = "https://app.leonardo.ai"
 POLL_INTERVAL_SECONDS = 5
-POLL_TIMEOUT_SECONDS = 600
+POLL_TIMEOUT_SECONDS = 1200
 
 
 def build_graphql_headers(token):
