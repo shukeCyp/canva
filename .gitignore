@@ -1,0 +1,16 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+
+build/
+dist/
+browsers/
+*.spec.bak
+
+cookies.txt
+session.json
+data/*.json
+data/browser_profiles/
+
+*.log

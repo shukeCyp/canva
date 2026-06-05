@@ -1,0 +1,90 @@
+name: Build Kehua
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows exe
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install pip deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Install Playwright browsers
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_BROWSERS_PATH = "$env:GITHUB_WORKSPACE\browsers"
+          Write-Host "Browsers path: $env:PLAYWRIGHT_BROWSERS_PATH"
+          python -m playwright install chromium 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "playwright install failed" }
+          Write-Host "=== Installed browsers ==="
+          Get-ChildItem browsers -Recurse -Depth 3 | Select-Object FullName, Length
+          $size = (Get-ChildItem browsers -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host "Browser bundle size: $([math]::Round($size, 2)) MB"
+
+      - name: Build exe
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean kehua.spec
+          $dist = "dist\Kehua"
+          $internal = Join-Path $dist "_internal"
+          $browserRoot = Join-Path $internal "browsers"
+          $playwrightRoot = Join-Path $internal "playwright"
+          $driverRoot = Join-Path $playwrightRoot "driver"
+          if (-not (Test-Path $browserRoot)) { throw "Missing Playwright browsers directory: $browserRoot" }
+          if (-not (Test-Path $driverRoot)) { throw "Missing Playwright driver directory: $driverRoot" }
+          if (-not (Test-Path (Join-Path $driverRoot "package"))) { throw "Missing Playwright driver package" }
+          if (-not (Get-ChildItem $browserRoot -Directory -Filter "chromium-*" -ErrorAction SilentlyContinue)) {
+            throw "Missing bundled Chromium under $browserRoot"
+          }
+          Write-Host "=== Bundled Playwright driver ==="
+          Get-ChildItem $driverRoot -Depth 2 | Select-Object FullName, Length
+          Write-Host "=== Bundled Chromium ==="
+          Get-ChildItem $browserRoot -Depth 2 | Select-Object FullName, Length
+
+      - name: Package build
+        shell: pwsh
+        run: |
+          $zipPath = "dist\Kehua-windows.zip"
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          Compress-Archive -Path "dist\Kehua\*" -DestinationPath $zipPath -Force
+          if (-not (Test-Path $zipPath)) { throw "Missing package: $zipPath" }
+          $size = (Get-Item $zipPath).Length / 1MB
+          Write-Host "Package: $zipPath ($([math]::Round($size, 2)) MB)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kehua-windows
+          path: dist/Kehua-windows.zip
+
+      - name: Upload release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "latest-build"
+          $asset = "dist\Kehua-windows.zip"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "Latest Windows Build" --notes "自动构建的 Windows 版本。" --latest=false
+          }
+          gh release upload $tag $asset --clobber
+          Write-Host "Download: https://github.com/${{ github.repository }}/releases/tag/$tag"
