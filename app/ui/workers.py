@@ -72,7 +72,7 @@ class ExecuteTaskWorker(QThread):
             self._log(f"✓ [2/3] 提交成功 generationId={generation_id} 消耗={cost}积分")
 
             # 3. 轮询结果
-            self._log(f"▶ [3/3] 等待视频生成完成 (最多等待5分钟)...")
+            self._log(f"▶ [3/3] 等待视频生成完成 (最多等待10分钟)...")
             poll_result = poll_generation_sync(
                 token, hasura_id, generation_id,
                 cancel_event=self._cancel_event,

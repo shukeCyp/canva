@@ -10,6 +10,8 @@ import aiofiles
 GRAPHQL_URL = "https://api.leonardo.ai/v1/graphql"
 SCHEMA_VERSION = "1.171.0"
 ORIGIN = "https://app.leonardo.ai"
+POLL_INTERVAL_SECONDS = 5
+POLL_TIMEOUT_SECONDS = 600
 
 
 def build_graphql_headers(token):
@@ -263,8 +265,9 @@ async def _poll_generation(token, hasura_user_id, generation_id, cancel_event=No
             ),
         }
         final_status = None
-        for i in range(60):
-            await asyncio.sleep(5)
+        max_attempts = POLL_TIMEOUT_SECONDS // POLL_INTERVAL_SECONDS
+        for i in range(max_attempts):
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
             # 检查取消
             if cancel_event and cancel_event.is_set():
@@ -276,9 +279,9 @@ async def _poll_generation(token, hasura_user_id, generation_id, cancel_event=No
             gens = s_data.get("data", {}).get("generations", [])
             if gens:
                 final_status = gens[0].get("status")
-                elapsed = (i + 1) * 5
+                elapsed = (i + 1) * POLL_INTERVAL_SECONDS
                 status_cn = {"PENDING": "排队中", "COMPLETE": "已完成", "FAILED": "失败"}.get(final_status, final_status)
-                if i == 0 or final_status != "PENDING":
+                if i == 0 or final_status != "PENDING" or elapsed % 60 == 0:
                     print(f"  [轮询结果] 第{i + 1}次({elapsed}s) 状态={status_cn}")
             if final_status == "COMPLETE":
                 print(f"  [轮询结果] ✓ 生成完成 总耗时={elapsed}s")
@@ -286,7 +289,7 @@ async def _poll_generation(token, hasura_user_id, generation_id, cancel_event=No
             elif final_status == "FAILED":
                 raise RuntimeError(f"视频生成失败 generationId={generation_id}")
         else:
-            raise RuntimeError(f"轮询超时 (300s) generationId={generation_id} 最后状态={final_status}")
+            raise RuntimeError(f"轮询超时 ({POLL_TIMEOUT_SECONDS}s) generationId={generation_id} 最后状态={final_status}")
 
         # Step 2: 获取结果 URL
         print(f"  [轮询结果] 获取视频URL...")
